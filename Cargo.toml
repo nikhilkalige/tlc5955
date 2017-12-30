@@ -3,4 +3,6 @@ name = "tlc5955"
 version = "0.1.0"
 authors = ["lonewolf"]
 
-[dependencies]
+[dependencies.embedded-hal]
+# git = "https://github.com/japaric/embedded-hal"
+path = "../../rust-resources/embedded-hal/"
