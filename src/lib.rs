@@ -4,6 +4,7 @@
 #![allow(dead_code)]
 #![deny(missing_docs)]
 //#![deny(warnings)]
+#![feature(const_fn)]
 #![feature(unsize)]
 #![feature(conservative_impl_trait)]
 #![feature(iterator_step_by)]
@@ -14,17 +15,21 @@ extern crate embedded_hal as hal;
 use core::marker::Unsize;
 use core::marker::PhantomData;
 
-use hal::spi::{self, DmaRead, DmaReadWrite, DmaWrite, FullDuplex, Mode, Phase, Polarity};
+use hal::spi::{DmaRead, DmaReadWrite, DmaWrite};
 use hal::dma::Transfer;
-use hal::blocking::spi::transfer;
+use hal::blocking::spi::FullDuplex as BlockingFullDuplex;
 use hal::digital::OutputPin;
 use hal::Pwm;
+
+pub mod take_cell;
+
+use take_cell::MapCell;
 
 
 /// TLC5955 Driver
 /// Needs constant generics to fix the number of chipsets
 pub struct Tlc5955<B, SPI, LATCH, PWM> {
-    spi: SPI,
+    spi: MapCell<SPI>,
     latch: LATCH,
     gsclk: PWM,
     count: u8,
@@ -73,7 +78,7 @@ impl Default for Chipset {
 
 impl<B, SPI, LATCH, PWM> Tlc5955<B, SPI, LATCH, PWM>
 where
-    SPI: FullDuplex<u8> + DmaWrite<B, u8> + DmaRead<u8> + DmaReadWrite<u8>,
+    SPI: BlockingFullDuplex<u8> + DmaWrite<B, u8> + DmaRead<u8> + DmaReadWrite<u8>,
     LATCH: OutputPin,
     PWM: Pwm,
     B: Unsize<[u8]> + 'static
@@ -81,7 +86,7 @@ where
     /// Creates a new driver for `4` chips in series
     pub fn new(spi: SPI, latch: LATCH, gsclk: PWM, _count: u8) -> Self {
         let mut tlc = Tlc5955 {
-            spi,
+            spi: MapCell::new(spi),
             latch,
             gsclk,
             count: 4,
@@ -215,10 +220,13 @@ where
 
     fn blocking_write(&mut self, buffer: &mut [u8]) {
         debug_assert!(buffer.len() as u16 >= self.count as u16 * CHIP_REGISTER_LENGTH);
-        transfer(&mut self.spi, buffer);
+        self.spi.map(|spi| {
+            spi.transfer(buffer);
+        });
     }
 
-    pub fn update(&mut self, bytes: &'static mut B) -> impl Transfer
+    /// Send data to the driver
+    pub fn update(&mut self, bytes: &'static mut B) -> Option<impl Transfer>
     where
         B: Unsize<[u8]>,
     {
@@ -226,7 +234,17 @@ where
             let slice: &mut [u8] = bytes;
             debug_assert!(slice.len() as u16 >= self.count as u16 * CHIP_REGISTER_LENGTH);
         }
-        self.spi.send_dma(bytes)
+
+        if let Some(spi) = self.spi.take() {
+            Some(spi.send_dma(bytes))
+        } else {
+            None
+        }
+    }
+
+    /// Set the spi again
+    pub fn transfer_complete(&mut self, spi: SPI) {
+        self.spi.put(spi);
     }
 
     /// Calculate bit position
