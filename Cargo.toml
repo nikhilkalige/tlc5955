@@ -6,3 +6,13 @@ authors = ["lonewolf"]
 [dependencies.embedded-hal]
 # git = "https://github.com/japaric/embedded-hal"
 path = "../../rust-resources/embedded-hal/"
+
+[dependencies.logger]
+path = "../logger"
+
+[dependencies]
+numtoa = "0.0.7"
+
+[dependencies.nb]
+git = "https://github.com/japaric/nb"
+optional = false
